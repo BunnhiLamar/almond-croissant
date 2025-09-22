@@ -1,6 +1,6 @@
 import rclpy
 from rclpy.node import Node
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import Image, PointCloud2, CameraInfo
 import os
 import sys
 from datetime import datetime
@@ -10,8 +10,10 @@ import time
 import math
 import json
 import numpy as np
+import struct
+from sensor_msgs_py import point_cloud2 as pc2
 
-# Try to import PIL for PNG/JPG support
+
 try:
     from PIL import Image as PILImage
     PIL_AVAILABLE = True
@@ -34,7 +36,10 @@ class RoversCollisionRecreator(Node):
         self.husky2_odom_sub = self.create_subscription(Odometry, '/husky2/odom', self.husky2_odom_callback, 10)
         
         # Image subscriber for data collection
-        self.image_sub = self.create_subscription(Image, '/lander_camera/rgb', self.image_callback, 10)
+        self.image_sub = self.create_subscription(Image, '/lander/rgb', self.image_callback, 10)
+        self.camera_info_sub = self.create_subscription(CameraInfo, '/camera_info', self.camera_info_callback, 10)
+        # Point cloud subscriber
+        self.pointcloud_sub = self.create_subscription(PointCloud2, '/lander/point_cloud', self.pointcloud_callback, 10)
         
         # Robot states
         self.husky1_pos = Point()
@@ -53,8 +58,26 @@ class RoversCollisionRecreator(Node):
         self.data_folder = f"/workspace/omnilrs/scripts/nhi/rover_data_{timestamp}"
         if self.mode != 'stop':
             os.makedirs(self.data_folder, exist_ok=True)
+            os.makedirs(os.path.join(self.data_folder, "images"), exist_ok=True)
+            os.makedirs(os.path.join(self.data_folder, "pointclouds"), exist_ok=True)
+            os.makedirs(os.path.join(self.data_folder, "parameters"), exist_ok=True)
         self.image_count = 0
+        self.pointcloud_count = 0
         self.data_log = []
+
+        # sensor params
+        self.camera_params = None
+        self.lidar_params = {
+            "horizontal_fov": 360.0,
+            "vertical_fov": 50.0,
+            "horizontal_resolution": 0.4,
+            "vertical_resolution": 4.0,
+            "min_range": 0.4,
+            "max_range": 100.0,
+            "rotation_rate": 20.0,
+            "high_lod": True,  # RTX enabled
+            "frame_id": "sim_lidar"
+        }
 
         # Data collection 
         self.start_time = time.time()
@@ -68,7 +91,44 @@ class RoversCollisionRecreator(Node):
         self.get_logger().info(f"Data will be saved to: {self.data_folder}")
 
         self.target = None
-
+    def camera_info_callback(self, msg):
+        """Save camera parameters once"""
+        if self.camera_params is None and self.mode != 'stop':
+            self.camera_params = {
+                "header": {
+                    "frame_id": msg.header.frame_id,
+                    "timestamp": time.time()
+                },
+                "image_dimensions": {
+                    "height": msg.height,
+                    "width": msg.width
+                },
+                "camera_matrix": {
+                    "K": list(msg.k),  # 3x3 intrinsic matrix
+                    "D": list(msg.d),  # Distortion coefficients
+                    "R": list(msg.r),  # Rectification matrix
+                    "P": list(msg.p)   # Projection matrix
+                },
+                "distortion_model": msg.distortion_model,
+                "binning": {
+                    "x": msg.binning_x,
+                    "y": msg.binning_y
+                },
+                "roi": {
+                    "x_offset": msg.roi.x_offset,
+                    "y_offset": msg.roi.y_offset,
+                    "height": msg.roi.height,
+                    "width": msg.roi.width,
+                    "do_rectify": msg.roi.do_rectify
+                }
+            }
+            
+            # Save camera parameters immediately
+            camera_params_file = os.path.join(self.data_folder, "parameters", "camera_params.json")
+            with open(camera_params_file, 'w') as f:
+                json.dump(self.camera_params, f, indent=2)
+            
+            self.get_logger().info("Camera parameters saved!")
     def image_callback(self, msg):
         """Save images as JPG/PNG (if PIL available) or PPM (fallback)"""
         try:
@@ -82,7 +142,6 @@ class RoversCollisionRecreator(Node):
                 elif msg.encoding == "bgr8":
                     np_arr = np.frombuffer(msg.data, dtype=np.uint8)
                     image_array = np_arr.reshape((msg.height, msg.width, 3))
-                    # Convert BGR to RGB
                     rgb_array = image_array[:, :, ::-1]
                     pil_image = PILImage.fromarray(rgb_array, 'RGB')
                     
@@ -95,51 +154,71 @@ class RoversCollisionRecreator(Node):
                     self.get_logger().warn(f"Unsupported encoding: {msg.encoding}")
                     return
                 
-                # Save as JPG
+                # Save as JPG in images subfolder
                 if self.mode != 'stop':
-                    image_filename = f"photo_{self.image_count:04d}.jpg"
-                    image_path = os.path.join(self.data_folder, image_filename)
+                    image_filename = f"image_{self.image_count:04d}.jpg"
+                    image_path = os.path.join(self.data_folder, "images", image_filename)
                     pil_image.save(image_path, "JPEG", quality=90)
                     
                     self.image_count += 1
-                    
                     if self.image_count % 50 == 0:
-                        print(f"Saved {self.image_count} photos as JPG files")
-                        self.get_logger().info(f"Saved {self.image_count} photos as JPG files")
+                        print(f"Saved {self.image_count} images")
+                        self.get_logger().info(f"Saved {self.image_count} images")
+                        
+            # ... (keep your existing PPM fallback code but update paths)
                     
-            else:
-                # Fallback to PPM format
-                if msg.encoding == "rgb8":
-                    header = f"P6\n{msg.width} {msg.height}\n255\n"
-                    image_filename = f"photo_{self.image_count:04d}.ppm"
-                    image_path = os.path.join(self.data_folder, image_filename)
-                    
-                    with open(image_path, 'wb') as f:
-                        f.write(header.encode('ascii'))
-                        f.write(msg.data)
-                    
-                    self.image_count += 1
-                    
-                elif msg.encoding == "bgr8":
-                    np_arr = np.frombuffer(msg.data, dtype=np.uint8)
-                    image_array = np_arr.reshape((msg.height, msg.width, 3))
-                    rgb_array = image_array[:, :, ::-1]
-                    
-                    header = f"P6\n{msg.width} {msg.height}\n255\n"
-                    image_filename = f"photo_{self.image_count:04d}.ppm"
-                    image_path = os.path.join(self.data_folder, image_filename)
-                    
-                    with open(image_path, 'wb') as f:
-                        f.write(header.encode('ascii'))
-                        f.write(rgb_array.tobytes())
-                    
-                    self.image_count += 1
-                
-                if self.image_count % 50 == 0:
-                    self.get_logger().info(f"Saved {self.image_count} photos as PPM files (PIL not available)")
-                
         except Exception as e:
-            self.get_logger().error(f"Error saving photo: {e}")
+            self.get_logger().error(f"Error saving image: {e}")
+    def pointcloud_callback(self, msg):
+        """Save point cloud data as NPY files"""
+        try:
+            if self.mode != 'stop':
+                # Extract point cloud data
+                points_list = []
+                
+                # Read point cloud data
+                for point in pc2.read_points(msg, field_names=("x", "y", "z"), skip_nans=True):
+                    points_list.append([point[0], point[1], point[2]])
+                
+                if len(points_list) > 0:
+                    # Convert to numpy array
+                    points_array = np.array(points_list)
+                    
+                    # Save as NPY file (efficient for numpy arrays)
+                    pointcloud_filename = f"pointcloud_{self.pointcloud_count:04d}.npy"
+                    pointcloud_path = os.path.join(self.data_folder, "pointclouds", pointcloud_filename)
+                    np.save(pointcloud_path, points_array)
+                    
+                    # Also save metadata
+                    metadata = {
+                        "timestamp": msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9,
+                        "frame_id": msg.header.frame_id,
+                        "num_points": len(points_list),
+                        "point_step": msg.point_step,
+                        "row_step": msg.row_step,
+                        "is_dense": msg.is_dense,
+                        "height": msg.height,
+                        "width": msg.width,
+                        "fields": [{"name": field.name, "offset": field.offset, 
+                                "datatype": field.datatype, "count": field.count} 
+                                for field in msg.fields]
+                    }
+                    
+                    metadata_filename = f"pointcloud_{self.pointcloud_count:04d}_meta.json"
+                    metadata_path = os.path.join(self.data_folder, "pointclouds", metadata_filename)
+                    with open(metadata_path, 'w') as f:
+                        json.dump(metadata, f, indent=2)
+                    
+                    self.pointcloud_count += 1
+                    
+                    if self.pointcloud_count % 10 == 0:
+                        self.get_logger().info(f"Saved {self.pointcloud_count} point clouds")
+                        print(f"Point cloud {self.pointcloud_count}: {len(points_list)} points")
+                else:
+                    print(f"Point cloud {self.pointcloud_count}: No points detected")
+                    
+        except Exception as e:
+            self.get_logger().error(f"Error saving point cloud: {e}")
 
     def save_data(self, distance):
         """Save distance data"""
@@ -196,7 +275,7 @@ class RoversCollisionRecreator(Node):
             twist.linear.x *= 0.3
                 
         return twist
-
+    
     def calculate_angle_to_target(self, current_pos, current_yaw, target_pos):
         """Calculate angle to turn towards target"""
         dx = target_pos.x - current_pos.x
@@ -225,6 +304,26 @@ class RoversCollisionRecreator(Node):
         if self.mode == 'collision':
             husky1_twist = self.move_towards_target(self.husky1_pos, self.husky1_yaw, self.husky2_pos)
             husky2_twist = self.move_towards_target(self.husky2_pos, self.husky2_yaw, self.husky1_pos)
+        elif self.mode == "obscured-collision":
+            target = Point()
+            if self.husky1_pos.y < self.husky2_pos.y:
+                #move husky2, husky1 stays at the same position
+                if not self.target:
+                    target.x = self.husky1_pos.x
+                    target.y = self.husky1_pos.y + 0.5
+                    self.target = target
+                # husky1_twist = Twist()
+                husky2_twist = self.move_towards_target(self.husky2_pos, self.husky2_yaw, self.target)
+                
+            else:
+                #move husky1
+                if not self.target:
+                    target.x = self.husky2_pos.x
+                    target.y = self.husky2_pos.y + 0.5
+                    self.target =target
+                husky2_twist = self.move_towards_target(self.husky1_pos, self.husky1_yaw, self.target)
+                # husky1_twist = Twist()
+            
         elif self.mode == 'fake-collision':
             
             target = Point()
@@ -234,14 +333,14 @@ class RoversCollisionRecreator(Node):
                     target.y = self.husky2_pos.y # di ngang thoi :D, giu nguyen y
                     self.target = target
                 husky2_twist = self.move_towards_target(self.husky2_pos, self.husky2_yaw, self.target)
-                husky1_twist = Twist()
+                # husky1_twist = Twist()
             else:
                 if not self.target:
                     target.x = (self.husky2_pos.x + 2) if self.husky1_pos.x < self.husky2_pos.x else (self.husky2_pos.x - 2)
                     target.y = self.husky1_pos.y
                     self.target = target
                 husky1_twist = self.move_towards_target(self.husky1_pos, self.husky1_yaw, self.target)
-                husky2_twist = Twist()
+                # husky2_twist = Twist()
         elif self.mode == 'stop':
             husky1_twist, husky2_twist = Twist(), Twist()
             print("x:", self.husky1_pos)
@@ -259,40 +358,62 @@ class RoversCollisionRecreator(Node):
         return math.atan2(siny_cosp, cosy_cosp)
     
     def stop_robots(self):
-        """Stop both robots and save data"""
-        self.get_logger().info("Stopping robots...")
+        """Stop both robots and save all data"""
+        self.get_logger().info("Stopping robots and saving data...")
         stop_twist = Twist()
         
-        # Send stop commands multiple times to ensure they're received
+        # Send stop commands
         for i in range(5):
             self.husky1_pub.publish(stop_twist)
             self.husky2_pub.publish(stop_twist)
             time.sleep(0.1)
         
-        # Save data log
-        log_file = os.path.join(self.data_folder, "distance_log.json")
-        with open(log_file, 'w') as f:
-            json.dump(self.data_log, f, indent=2)
-        
-        # Save summary
-        summary = {
-            "total_duration": time.time() - self.start_time,
-            "total_data_points": len(self.data_log),
-            "total_photos": self.image_count,
-            "data_folder": self.data_folder
-        }
-        
-        summary_file = os.path.join(self.data_folder, "summary.json")
-        with open(summary_file, 'w') as f:
-            json.dump(summary, f, indent=2)
-        
-        file_type = "JPG" if PIL_AVAILABLE else "PPM"
-        self.get_logger().info(f"Saved {self.image_count} {file_type} photos and data to {self.data_folder}")
-        self.get_logger().info("Stop commands sent to both robots")
+        if self.mode != 'stop':
+            # Save LIDAR parameters
+            lidar_params_file = os.path.join(self.data_folder, "parameters", "lidar_params.json")
+            with open(lidar_params_file, 'w') as f:
+                json.dump(self.lidar_params, f, indent=2)
+            
+            # Save complete data log
+            log_file = os.path.join(self.data_folder, "synchronized_data_log.json")
+            with open(log_file, 'w') as f:
+                json.dump(self.data_log, f, indent=2)
+            
+            # Save enhanced summary
+            summary = {
+                "experiment_info": {
+                    "mode": self.mode,
+                    "total_duration": time.time() - self.start_time,
+                    "start_time": self.start_time,
+                    "end_time": time.time()
+                },
+                "data_collected": {
+                    "total_images": self.image_count,
+                    "total_pointclouds": self.pointcloud_count,
+                    "total_data_points": len(self.data_log)
+                },
+                "file_structure": {
+                    "images": "images/*.jpg",
+                    "pointclouds": "pointclouds/*.npy (with *_meta.json)",
+                    "parameters": "parameters/*.json",
+                    "logs": "*.json"
+                },
+                "sensor_info": {
+                    "camera_params_saved": self.camera_params is not None,
+                    "lidar_params_saved": True
+                }
+            }
+            
+            summary_file = os.path.join(self.data_folder, "experiment_summary.json")
+            with open(summary_file, 'w') as f:
+                json.dump(summary, f, indent=2)
+            
+            self.get_logger().info(f"Complete dataset saved to {self.data_folder}")
+            self.get_logger().info(f"Images: {self.image_count}, Point Clouds: {self.pointcloud_count}")
 
 def main(args=None):
     rclpy.init(args=args)
-    rover_controller = RoversCollisionRecreator(mode = 'fake-collision')
+    rover_controller = RoversCollisionRecreator(mode = 'stop') #obscured-collision , fake-collision 
     try:
         rclpy.spin(rover_controller)
     except KeyboardInterrupt:
@@ -305,4 +426,11 @@ def main(args=None):
 if __name__ == '__main__':
     main()
 
+# Step 1: add 2 rovers husky1 and 2 into isaac-sim
+# Step1.2: add rocks, sensors and action graph, change lidar vertical fov from 30 to 50, xoay lidar (z axis) 180 do
+# step2: heheh
+# step 3: idk
+# step 4: add camera facing those 2 rovers
+# step 5: add topic with prim path to the added camera and publish a ros2 topic
+# step 6: run the code with this cmd
 #/isaac-sim/python.sh /workspace/omnilrs/scripts/nhi/rover_controller2.py
