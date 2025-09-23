@@ -1,83 +1,182 @@
-[New!] Please also check [WAFT](https://github.com/princeton-vl/WAFT), our new efficient state-of-the-art method. 
+# ROS Topics Documentation
 
-# SEA-RAFT
+This document lists all available ROS topics in the system, organized by category and functionality.
 
-[[Paper](https://arxiv.org/abs/2405.14793)][[Slides](https://docs.google.com/presentation/d/1xZn-NowHuPqfdLDAaQwKyzYvP4HzGmT7/edit?usp=sharing&ouid=118125745783453356964&rtpof=true&sd=true)]
+## Table of Contents
+- [OmniLRS (Omniverse Isaac Sim)](#omnilrs-omniverse-isaac-sim)
+  - [Lens Flare](#lens-flare)
+  - [Rendering](#rendering)
+  - [Robots](#robots)
+  - [Sun/Lighting](#sunlighting)
+  - [Terrain](#terrain)
+- [Camera Topics](#camera-topics)
+- [Robot-Specific Topics](#robot-specific-topics)
+  - [Husky1](#husky1)
+  - [Husky2](#husky2)
+  - [Lander](#lander)
+- [System Topics](#system-topics)
 
-We introduce SEA-RAFT, a more simple, efficient, and accurate [RAFT](https://github.com/princeton-vl/RAFT) for optical flow. Compared with RAFT, SEA-RAFT is trained with a new loss (mixture of Laplace). It directly regresses an initial flow for faster convergence in iterative refinements and introduces rigid-motion pre-training to improve generalization. SEA-RAFT achieves state-of-the-art accuracy on the [Spring benchmark](https://spring-benchmark.org/) with a 3.69 endpoint-error (EPE) and a 0.36 1-pixel outlier rate (1px), representing 22.9\% and 17.8\% error reduction from best-published results. In addition, SEA-RAFT obtains the best cross-dataset generalization on KITTI and Spring. With its high efficiency, SEA-RAFT operates at least 2.3x faster than existing methods while maintaining competitive performance.
+---
 
-<img src="assets/visualization.png" width='1000'>
+## OmniLRS (Omniverse Isaac Sim)
 
-If you find SEA-RAFT useful for your work, please consider citing our academic paper:
+### Lens Flare
+Control camera lens flare effects and optical properties.
 
-<h3 align="center">
-    <a href="https://arxiv.org/abs/2405.14793">
-        SEA-RAFT: Simple, Efficient, Accurate RAFT for Optical Flow
-    </a>
-</h3>
-<p align="center">
-    <a href="https://memoryslices.github.io/">Yihan Wang</a>, 
-    <a href="https://www.lahavlipson.com/">Lahav Lipson</a>, 
-    <a href="http://www.cs.princeton.edu/~jiadeng">Jia Deng</a><br>
-</p>
+| Topic | Description |
+|-------|-------------|
+| `/OmniLRS/LensFlare/ApertureRotation` | Rotation of camera aperture |
+| `/OmniLRS/LensFlare/EnableLensFlares` | Enable/disable lens flare effects |
+| `/OmniLRS/LensFlare/FocalLength` | Camera focal length setting |
+| `/OmniLRS/LensFlare/Fstop` | Camera f-stop (aperture) value |
+| `/OmniLRS/LensFlare/NumBlades` | Number of aperture blades |
+| `/OmniLRS/LensFlare/Scale` | Lens flare scale factor |
+| `/OmniLRS/LensFlare/SensorAspectRatio` | Camera sensor aspect ratio |
+| `/OmniLRS/LensFlare/SensorDiagonal` | Camera sensor diagonal size |
 
+### Rendering
+Real-time rendering configuration for RTX.
+
+| Topic | Description |
+|-------|-------------|
+| `/OmniLRS/Render/EnableRTXInteractive` | Enable RTX interactive rendering |
+| `/OmniLRS/Render/EnableRTXRealTime` | Enable RTX real-time rendering |
+
+### Robots
+Robot control and management commands.
+
+| Topic | Description |
+|-------|-------------|
+| `/OmniLRS/Robots/Reset` | Reset individual robot |
+| `/OmniLRS/Robots/ResetAll` | Reset all robots in simulation |
+| `/OmniLRS/Robots/Spawn` | Spawn new robot instance |
+| `/OmniLRS/Robots/Teleport` | Teleport robot to specified location |
+
+### Sun/Lighting
+Environmental lighting and sun parameters.
+
+| Topic | Description |
+|-------|-------------|
+| `/OmniLRS/Sun/AngularSize` | Angular size of the sun |
+| `/OmniLRS/Sun/Color` | Sun color settings |
+| `/OmniLRS/Sun/ColorTemperature` | Sun color temperature (Kelvin) |
+| `/OmniLRS/Sun/Intensity` | Sun light intensity |
+| `/OmniLRS/Sun/Pose` | Sun position and orientation |
+
+### Terrain
+Terrain generation and randomization controls.
+
+| Topic | Description |
+|-------|-------------|
+| `/OmniLRS/Terrain/EnableRocks` | Enable/disable rocks on terrain |
+| `/OmniLRS/Terrain/RandomizeRocks` | Randomize rock placement |
+| `/OmniLRS/Terrain/Switch` | Switch between terrain configurations |
+
+---
+
+## Camera Topics
+
+| Topic | Description |
+|-------|-------------|
+| `/bird_view/depth` | Bird's eye view depth camera data |
+| `/bird_view/rgb` | Bird's eye view RGB camera data |
+| `/camera_info` | Camera calibration and metadata |
+
+---
+
+## Robot-Specific Topics
+
+### Husky1
+First Husky robot instance topics.
+
+| Topic | Description |
+|-------|-------------|
+| `/husky1/clock` | Robot-specific clock/timing |
+| `/husky1/cmd_vel` | Velocity commands for Husky1 |
+| `/husky1/odom` | Odometry data from Husky1 |
+| `/husky1/pointcloud` | Point cloud data from Husky1 sensors |
+| `/husky1/tf` | Transform data for Husky1 |
+
+### Husky2
+Second Husky robot instance topics.
+
+| Topic | Description |
+|-------|-------------|
+| `/husky2/clock` | Robot-specific clock/timing |
+| `/husky2/cmd_vel` | Velocity commands for Husky2 |
+| `/husky2/odom` | Odometry data from Husky2 |
+| `/husky2/pointcloud` | Point cloud data from Husky2 sensors |
+| `/husky2/tf` | Transform data for Husky2 |
+
+### Lander
+Lander/spacecraft vehicle topics.
+
+| Topic | Description |
+|-------|-------------|
+| `/lander/depth_left` | Left stereo depth camera |
+| `/lander/depth_right` | Right stereo depth camera |
+| `/lander/point_cloud` | Generated point cloud data |
+| `/lander/rgb_left` | Left stereo RGB camera |
+| `/lander/rgb_right` | Right stereo RGB camera |
+
+---
+
+## System Topics
+
+General ROS system and global topics.
+
+| Topic | Description |
+|-------|-------------|
+| `/clock` | Global system clock |
+| `/cmd_vel` | Global velocity commands |
+| `/odom` | Global odometry data |
+| `/parameter_events` | ROS parameter change events |
+| `/pointcloud` | Global point cloud data |
+| `/rosout` | ROS logging output |
+
+---
+
+## Usage Examples
+
+### Subscribing to Topics
+```bash
+# Listen to bird view RGB camera
+rostopic echo /bird_view/rgb
+
+# Monitor Husky1 odometry
+rostopic echo /husky1/odom
+
+# Check lens flare settings
+rostopic echo /OmniLRS/LensFlare/EnableLensFlares
 ```
-@article{wang2024sea,
-  title={SEA-RAFT: Simple, Efficient, Accurate RAFT for Optical Flow},
-  author={Wang, Yihan and Lipson, Lahav and Deng, Jia},
-  journal={arXiv preprint arXiv:2405.14793},
-  year={2024}
-}
+
+### Publishing Commands
+```bash
+# Send velocity command to Husky1
+rostopic pub /husky1/cmd_vel geometry_msgs/Twist "linear: {x: 1.0, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.5}"
+
+# Enable lens flares
+rostopic pub /OmniLRS/LensFlare/EnableLensFlares std_msgs/Bool "data: true"
 ```
 
-## Requirements
-Our code is developed with pytorch 2.2.0, CUDA 12.2 and python 3.10.
-```Shell
-conda create --name SEA-RAFT python=3.10.13
-conda activate SEA-RAFT
-pip install -r requirements.txt
+### Topic Information
+```bash
+# Get topic type and details
+rostopic info /lander/rgb_left
+
+# List all active topics
+rostopic list
+
+# Show message type
+rostopic type /husky1/odom
 ```
 
-## Model Zoo
+---
 
-Google Drive: [link](https://drive.google.com/drive/folders/1YLovlvUW94vciWvTyLf-p3uWscbOQRWW?usp=sharing).
+## Notes
 
-HuggingFace: [link](https://huggingface.co/papers/2405.14793).
+- **OmniLRS topics** are specific to NVIDIA Omniverse Isaac Sim integration
+- **Stereo camera setup** is available on the lander with left/right RGB and depth cameras
+- **Multiple robot support** with separate namespaces for each Husky instance
+- **Real-time rendering** can be toggled via RTX rendering topics
 
-## Custom Usage
-
-We provide an example in `custom.py`. By default, this file will take two RGB images as the input and provide visualizations of the optical flow and the uncertainty. You can load your model by providing the path:
-```Shell
-python custom.py --cfg config/eval/spring-M.json --path models/Tartan-C-T-TSKH-spring540x960-M.pth
-```
-or load our models through HuggingFace🤗 (make sure you have installed huggingface-hub):
-```Shell
-python custom.py --cfg config/eval/spring-M.json --url MemorySlices/Tartan-C-T-TSKH-spring540x960-M
-```
-
-## Datasets
-To evaluate/train SEA-RAFT, you will need to download the required datasets: [FlyingChairs](https://lmb.informatik.uni-freiburg.de/resources/datasets/FlyingChairs.en.html#flyingchairs), [FlyingThings3D](https://lmb.informatik.uni-freiburg.de/resources/datasets/SceneFlowDatasets.en.html), [Sintel](http://sintel.is.tue.mpg.de/), [KITTI](http://www.cvlibs.net/datasets/kitti/eval_scene_flow.php?benchmark=flow), [HD1K](http://hci-benchmark.iwr.uni-heidelberg.de/), [TartanAir](https://theairlab.org/tartanair-dataset/), and [Spring](https://spring-benchmark.org/).
-
-By default `datasets.py` will search for the datasets in these locations. You can create symbolic links to wherever the datasets were downloaded in the `datasets` folder. Please check [RAFT](https://github.com/princeton-vl/RAFT) for more details.
-
-```Shell
-├── datasets
-    ├── Sintel
-    ├── KITTI
-    ├── FlyingChairs/FlyingChairs_release
-    ├── FlyingThings3D
-    ├── HD1K
-    ├── spring
-        ├── test
-        ├── train
-        ├── val
-    ├── tartanair
-```
-
-## Training, Evaluation, and Submission
-
-Please refer to [scripts/train.sh](scripts/train.sh), [scripts/eval.sh](scripts/eval.sh), and [scripts/submission.sh](scripts/submission.sh) for more details.
-
-## Acknowledgements
-
-This project relies on code from existing repositories: [RAFT](https://github.com/princeton-vl/RAFT), [unimatch](https://github.com/autonomousvision/unimatch/tree/master), [Flowformer](https://github.com/drinkingcoder/FlowFormer-Official), [ptlflow](https://github.com/hmorimitsu/ptlflow), and [LoFTR](https://github.com/zju3dv/LoFTR). We thank the original authors for their excellent work.
