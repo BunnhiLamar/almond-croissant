@@ -36,7 +36,14 @@ class RoversCollisionRecreator(Node):
         self.husky2_odom_sub = self.create_subscription(Odometry, '/husky2/odom', self.husky2_odom_callback, 10)
         
         # Image subscriber for data collection
-        self.image_sub = self.create_subscription(Image, '/lander/rgb', self.image_callback, 10)
+            # ==== lander camera
+        self.rgb_left_sub = self.create_subscription(Image, '/lander/rgb_left', self.rgb_left_callback, 10)
+        self.depth_left_sub = self.create_subscription(Image, '/lander/depth_left', self.depth_left_callback, 10)
+        self.rgb_right_sub = self.create_subscription(Image, '/lander/rgb_right', self.rgb_right_callback, 10)
+        self.depth_right_sub = self.create_subscription(Image, '/lander/depth_right', self.depth_right_callback, 10)
+            # ==== bird eye view
+        self.rgb_birdview_sub = self.create_subscription(Image, '/bird_view/rgb', self.rgb_birdview_callback, 10)
+        self.depth_birdview_sub = self.create_subscription(Image, '/bird_view/depth', self.depth_birdview_callback, 10)
         self.camera_info_sub = self.create_subscription(CameraInfo, '/camera_info', self.camera_info_callback, 10)
         # Point cloud subscriber
         self.pointcloud_sub = self.create_subscription(PointCloud2, '/lander/point_cloud', self.pointcloud_callback, 10)
@@ -55,12 +62,18 @@ class RoversCollisionRecreator(Node):
 
         # Data collection setup
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.data_folder = f"/workspace/omnilrs/scripts/nhi/rover_data_{timestamp}"
+        self.data_folder = f"/workspace/omnilrs/scripts/nhi/collected_data/rover_data_{timestamp}"
         if self.mode != 'stop':
             os.makedirs(self.data_folder, exist_ok=True)
-            os.makedirs(os.path.join(self.data_folder, "images"), exist_ok=True)
+            os.makedirs(os.path.join(self.data_folder, "rgb_right"), exist_ok=True)
+            os.makedirs(os.path.join(self.data_folder, "depth_right"), exist_ok=True)
+            os.makedirs(os.path.join(self.data_folder, "rgb_left"), exist_ok=True)
+            os.makedirs(os.path.join(self.data_folder, "depth_left"), exist_ok=True)
+            os.makedirs(os.path.join(self.data_folder, "rgb_birdview"), exist_ok=True)
+            os.makedirs(os.path.join(self.data_folder, "depth_birdview"), exist_ok=True)
             os.makedirs(os.path.join(self.data_folder, "pointclouds"), exist_ok=True)
             os.makedirs(os.path.join(self.data_folder, "parameters"), exist_ok=True)
+             
         self.image_count = 0
         self.pointcloud_count = 0
         self.data_log = []
@@ -129,11 +142,44 @@ class RoversCollisionRecreator(Node):
                 json.dump(self.camera_params, f, indent=2)
             
             self.get_logger().info("Camera parameters saved!")
-    def image_callback(self, msg):
+    def rgb_right_callback(self, msg):
+        img_count = int(np.floor(self.image_count+1))
+        image_filename = f"image_{img_count:04d}.jpg"
+        image_path = os.path.join(self.data_folder, "rgb_right", image_filename)
+        self.image_callback(msg, image_path)
+    def depth_right_callback(self, msg):
+        img_count = int(np.floor(self.image_count+1))
+        image_filename = f"image_{img_count:04d}.jpg"
+        image_path = os.path.join(self.data_folder, "depth_right", image_filename)
+        self.image_callback(msg, image_path)
+    def rgb_left_callback(self, msg):
+        img_count = int(np.floor(self.image_count+1))
+        image_filename = f"image_{img_count:04d}.jpg"
+        image_path = os.path.join(self.data_folder, "rgb_left", image_filename)
+        self.image_callback(msg, image_path)
+    def depth_left_callback(self, msg):
+        img_count = int(np.floor(self.image_count+1))
+        image_filename = f"image_{img_count:04d}.jpg"
+        image_path = os.path.join(self.data_folder, "depth_left", image_filename)
+        self.image_callback(msg, image_path)
+    def rgb_birdview_callback(self, msg):
+        img_count = int(np.floor(self.image_count+1))
+        image_filename = f"image_{img_count:04d}.jpg"
+        image_path = os.path.join(self.data_folder, "rgb_birdview", image_filename)
+        self.image_callback(msg, image_path)
+    def depth_birdview_callback(self, msg):
+        img_count = int(np.floor(self.image_count+1))
+        image_filename = f"image_{img_count:04d}.jpg"
+        image_path = os.path.join(self.data_folder, "depth_birdview", image_filename)
+        self.image_callback(msg, image_path)
+    def image_callback(self, msg, image_path):
         """Save images as JPG/PNG (if PIL available) or PPM (fallback)"""
+        if self.mode == 'stop':
+            return
         try:
             if PIL_AVAILABLE:
                 # Save as JPG using PIL
+
                 if msg.encoding == "rgb8":
                     np_arr = np.frombuffer(msg.data, dtype=np.uint8)
                     image_array = np_arr.reshape((msg.height, msg.width, 3))
@@ -151,21 +197,29 @@ class RoversCollisionRecreator(Node):
                     pil_image = PILImage.fromarray(image_array, 'L')
                     
                 else:
-                    self.get_logger().warn(f"Unsupported encoding: {msg.encoding}")
-                    return
+                    # self.get_logger().warn(f"Unsupported encoding: {msg.encoding}")
+                    # return
+                                    # if msg.encoding == "32FC1":  # Depth image
+                    np_arr = np.frombuffer(msg.data, dtype=np.float32)
+                    depth_array = np_arr.reshape((msg.height, msg.width))
+                    # Normalize depth to 0-255 range, handle inf/nan
+                    depth_array = np.nan_to_num(depth_array, nan=0.0, posinf=0.0, neginf=0.0)
+                    if depth_array.max() > 0:
+                        depth_normalized = (depth_array / depth_array.max() * 255).astype(np.uint8)
+                    else:
+                        depth_normalized = np.zeros_like(depth_array, dtype=np.uint8)
+                    pil_image = PILImage.fromarray(depth_normalized, 'L')
                 
                 # Save as JPG in images subfolder
-                if self.mode != 'stop':
-                    image_filename = f"image_{self.image_count:04d}.jpg"
-                    image_path = os.path.join(self.data_folder, "images", image_filename)
-                    pil_image.save(image_path, "JPEG", quality=90)
-                    
-                    self.image_count += 1
-                    if self.image_count % 50 == 0:
-                        print(f"Saved {self.image_count} images")
-                        self.get_logger().info(f"Saved {self.image_count} images")
-                        
-            # ... (keep your existing PPM fallback code but update paths)
+                # if self.mode != 'stop':
+                
+                pil_image.save(image_path, "JPEG", quality=90)
+                
+                self.image_count += 1/6.0
+                if self.image_count % 50 == 0:
+                    print(f"Saved {self.image_count} images")
+                    self.get_logger().info(f"Saved {self.image_count} images")
+
                     
         except Exception as e:
             self.get_logger().error(f"Error saving image: {e}")
@@ -413,7 +467,7 @@ class RoversCollisionRecreator(Node):
 
 def main(args=None):
     rclpy.init(args=args)
-    rover_controller = RoversCollisionRecreator(mode = 'stop') #obscured-collision , fake-collision 
+    rover_controller = RoversCollisionRecreator(mode = 'stop') #collision , obscured-collision , fake-collision 
     try:
         rclpy.spin(rover_controller)
     except KeyboardInterrupt:
